@@ -1,5 +1,5 @@
 # stage 1: pull and build internal logic package
-FROM node:22-alpine AS logic-builder
+FROM node:24-alpine AS logic-builder
 RUN apk add --no-cache git
 WORKDIR /app/vote-internals
 ARG CACHEBUST=1
@@ -8,7 +8,7 @@ RUN npm ci
 RUN npm run build
 
 # stage 2: pull and build adonisjs api
-FROM node:22-alpine AS api-builder
+FROM node:24-alpine AS api-builder
 RUN apk add --no-cache git
 WORKDIR /app/vote-internals
 COPY --from=logic-builder /app/vote-internals /app/vote-internals
@@ -19,7 +19,7 @@ RUN npm ci
 RUN node ace build
 
 # stage 3: lean production runner
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app/vote-api
 ENV NODE_ENV=production
 
