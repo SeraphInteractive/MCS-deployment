@@ -35,8 +35,8 @@ services:
   # adonisjs voting api backend
   api:
     build:
-      context: ..
-      dockerfile: MCS-deployment/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "${PORT:-3333}:3333"
