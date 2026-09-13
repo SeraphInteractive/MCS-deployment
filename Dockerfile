@@ -3,7 +3,7 @@ FROM node:24-alpine AS logic-builder
 RUN apk add --no-cache git
 WORKDIR /app/vote-internals
 ARG CACHEBUST=1
-RUN git clone https://github.com/SeraphInteractive/MCS-internal-logic.git .
+RUN git clone https://github.com/SeraphInteractive/Platform-Internal-Logic.git .
 RUN npm ci
 RUN npm run build
 
