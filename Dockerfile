@@ -14,7 +14,7 @@ WORKDIR /app/vote-internals
 COPY --from=logic-builder /app/vote-internals /app/vote-internals
 WORKDIR /app/vote-api
 ARG CACHEBUST=1
-RUN git clone https://github.com/SeraphInteractive/MCS-api.git .
+RUN git clone https://github.com/SeraphInteractive/Platform-API.git .
 RUN npm ci
 RUN node ace build
 
