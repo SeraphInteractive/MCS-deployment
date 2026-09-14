@@ -60,13 +60,38 @@ services:
       DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       ADMIN_DISCORD_IDS: ${ADMIN_DISCORD_IDS:-}
+      SUPERVISOR_DISCORD_IDS: ${SUPERVISOR_DISCORD_IDS:-}
       MODERATOR_DISCORD_IDS: ${MODERATOR_DISCORD_IDS:-}
+      SENIOR_DISCORD_IDS: ${SENIOR_DISCORD_IDS:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      DISCORD_SUPERVISOR_WEBHOOK_URL: ${DISCORD_SUPERVISOR_WEBHOOK_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
+  # caddy reverse proxy for port 80/443 routing and automatic tls
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
