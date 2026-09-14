@@ -90,6 +90,25 @@ services:
     depends_on:
       - api
 
+  # discord bot and background sse worker
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      API_BASE_URL: http://api:3333/api/v1
+      WEB_APP_URL: ${WEB_APP_URL:-http://35.192.18.39}
+      API_BEARER_TOKEN: ${API_BEARER_TOKEN:-}
+      ANNOUNCEMENT_CHANNEL_ID: ${ANNOUNCEMENT_CHANNEL_ID:-}
+      TELEMETRY_ALERT_CHANNEL_ID: ${TELEMETRY_ALERT_CHANNEL_ID:-}
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   redis_data:
