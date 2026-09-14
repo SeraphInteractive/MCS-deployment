@@ -1,0 +1,38 @@
+# Local development override: builds the images from sibling checkouts instead of pulling
+# them from GHCR and publishes the ports on localhost.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Expects the repos checked out side by side:
+#   Platform-Deployment/   (this repo)
+#   Platform-API/
+#   Platform-Discord/
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+
+  migrate:
+    image: platform-api:local
+    pull_policy: build
+    build:
+      context: ../Platform-API
+
+  api:
+    image: platform-api:local
+    pull_policy: build
+    build:
+      context: ../Platform-API
+    ports:
+      - "127.0.0.1:${PORT:-3333}:3333"
+
+  bot:
+    image: platform-discord:local
+    pull_policy: build
+    build:
+      context: ../Platform-Discord

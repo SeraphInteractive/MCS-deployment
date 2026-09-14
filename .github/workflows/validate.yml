@@ -1,0 +1,40 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # required variables are deliberately blank in .env.example; fill them with
+      # placeholders so the ${VAR:?} guards are exercised rather than tripped
+      - name: Build placeholder env
+        run: sed -E 's/^([A-Z0-9_]+)=$/\1=placeholder/' .env.example > .env.ci
+
+      - name: Validate production compose
+        run: docker compose --env-file .env.ci -f docker-compose.yml config --quiet
+
+      - name: Validate local override
+        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.local.yml config --quiet
+
+      # every variable the compose files reference (outside comments) must be documented in .env.example
+      - name: Check .env.example covers every variable
+        run: |
+          status=0
+          for var in $(grep -hv '^[[:space:]]*#' docker-compose.yml docker-compose.local.yml | grep -oE '\$\{[A-Z0-9_]+' | tr -d '${' | sort -u); do
+            if ! grep -qE "^${var}=" .env.example; then
+              echo "::error::${var} is referenced in compose but missing from .env.example"
+              status=1
+            fi
+          done
+          exit "$status"

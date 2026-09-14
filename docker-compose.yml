@@ -1,116 +1,178 @@
+# Platform stack: PostgreSQL, Redis, the AdonisJS API and the Discord bot.
+#
+# Images are built by GitHub Actions in the Platform-API and Platform-Discord repos and
+# published to GitHub Packages (ghcr.io); this file only pulls them.
+#
+# Dokploy deploys this file as a "Compose" service. Variables set in Dokploy's Environment
+# tab are written to a .env file next to this file, which is where the variable references
+# below are resolved from. See .env.example for the full list.
+#
+# Ingress and TLS are handled by Dokploy's Traefik: add a domain in the Domains tab that
+# targets service `api` on container port 3333. Nothing in this file binds a host port.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# shared by the api and the one-shot migration job
+x-api-environment: &api-environment
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: "3333"
+  APP_NAME: platform-api
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  APP_KEY: ${APP_KEY:?APP_KEY is required}
+  APP_URL: ${APP_URL:?APP_URL is required}
+  # first entry doubles as the oauth redirect target, see .env.example
+  CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DB_DATABASE: ${DB_DATABASE:-platform}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+  DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required}
+  DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?DISCORD_CLIENT_SECRET is required}
+  DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:?DISCORD_REDIRECT_URI is required}
+  ADMIN_DISCORD_IDS: ${ADMIN_DISCORD_IDS:-}
+  SUPERVISOR_DISCORD_IDS: ${SUPERVISOR_DISCORD_IDS:-}
+  MODERATOR_DISCORD_IDS: ${MODERATOR_DISCORD_IDS:-}
+  SENIOR_DISCORD_IDS: ${SENIOR_DISCORD_IDS:-}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_REGION: ${S3_REGION:-}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+  DISCORD_SUPERVISOR_WEBHOOK_URL: ${DISCORD_SUPERVISOR_WEBHOOK_URL:-}
+
 services:
-  # postgres database for rounds, entries, ballots, and telemetry
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_DATABASE:-mcs_voting}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_DATABASE:-platform}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_DATABASE:-mcs_voting}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
-  # redis for leaderboard caching and rate limiting
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
+    # the api only uses redis as a short-lived cache: no persistence, bounded memory, lru eviction
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-128mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    environment:
+      # redis-cli picks this up, so the healthcheck needs no -a flag
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
-  # adonisjs voting api backend
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "${PORT:-3333}:3333"
-    environment:
-      NODE_ENV: production
-      PORT: 3333
-      HOST: 0.0.0.0
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      APP_KEY: ${APP_KEY}
-      APP_URL: ${APP_URL:-http://localhost:3333}
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      DB_DATABASE: ${DB_DATABASE:-mcs_voting}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
-      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
-      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      ADMIN_DISCORD_IDS: ${ADMIN_DISCORD_IDS:-}
-      SUPERVISOR_DISCORD_IDS: ${SUPERVISOR_DISCORD_IDS:-}
-      MODERATOR_DISCORD_IDS: ${MODERATOR_DISCORD_IDS:-}
-      SENIOR_DISCORD_IDS: ${SENIOR_DISCORD_IDS:-}
-      S3_ENDPOINT: ${S3_ENDPOINT:-}
-      S3_REGION: ${S3_REGION:-}
-      S3_BUCKET: ${S3_BUCKET:-}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
-      DISCORD_SUPERVISOR_WEBHOOK_URL: ${DISCORD_SUPERVISOR_WEBHOOK_URL:-}
+  # one-shot job: applies pending migrations and exits; `api` only starts once it succeeded.
+  # runs on every deploy and is a no-op when nothing is pending.
+  migrate:
+    image: ghcr.io/seraphinteractive/platform-api:${PLATFORM_API_TAG:-latest}
+    pull_policy: always
+    restart: "no"
+    command: ["node", "ace", "migration:run", "--force"]
+    environment: *api-environment
+    healthcheck:
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
-  # caddy reverse proxy for port 80/443 routing and automatic tls
-  caddy:
-    image: caddy:2-alpine
+  api:
+    image: ghcr.io/seraphinteractive/platform-api:${PLATFORM_API_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+    # reached by dokploy's traefik on this port; deliberately not published on the host
+    expose:
+      - "3333"
+    environment: *api-environment
+    # the image's own HEALTHCHECK (GET /health) drives `service_healthy` below
     depends_on:
-      - api
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
-  # discord bot and background sse worker
   bot:
-    build:
-      context: .
-      dockerfile: Dockerfile.bot
+    image: ghcr.io/seraphinteractive/platform-discord:${PLATFORM_DISCORD_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
-      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      # the bot reaches the api over the compose network, never through the public domain
       API_BASE_URL: http://api:3333/api/v1
-      WEB_APP_URL: ${WEB_APP_URL:-http://35.192.18.39}
       API_BEARER_TOKEN: ${API_BEARER_TOKEN:-}
+      WEB_APP_URL: ${WEB_APP_URL:?WEB_APP_URL is required}
       ANNOUNCEMENT_CHANNEL_ID: ${ANNOUNCEMENT_CHANNEL_ID:-}
       TELEMETRY_ALERT_CHANNEL_ID: ${TELEMETRY_ALERT_CHANNEL_ID:-}
+      SSE_POLL_INTERVAL_MS: ${SSE_POLL_INTERVAL_MS:-15000}
+    volumes:
+      # channel settings chosen with /set-announcement-channel survive redeploys
+      - bot_data:/app/data
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
 volumes:
   postgres_data:
-  redis_data:
-  caddy_data:
-  caddy_config:
+  bot_data:
