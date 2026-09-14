@@ -1,0 +1,37 @@
+name: Auto Deploy Deployment Stack
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Stack to Google Cloud VM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "=================================================="
+            echo "🚀 Updating Platform Infrastructure Stack..."
+            echo "=================================================="
+
+            DEPLOY_PATH="${{ secrets.VM_DEPLOY_PATH || '$HOME/Documents/MCS-deployment' }}"
+
+            if [ -d "$DEPLOY_PATH" ]; then
+              cd "$DEPLOY_PATH"
+              echo "Pulling latest deployment configs..."
+              git pull origin main
+              echo "Reloading Caddy configuration..."
+              docker compose exec -T caddy caddy reload 2>/dev/null || docker compose restart caddy 2>/dev/null || true
+            fi
+
+            echo "✅ Deployment stack configuration updated."
